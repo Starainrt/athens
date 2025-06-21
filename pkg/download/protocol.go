@@ -2,6 +2,7 @@ package download
 
 import (
 	"context"
+	"encoding/json"
 	"regexp"
 	"strings"
 	"sync"
@@ -184,9 +185,34 @@ func (p *protocol) Latest(ctx context.Context, mod string) (*storage.RevInfo, er
 	ctx, span := observ.StartSpan(ctx, op.String())
 	defer span.End()
 	if p.networkMode == Offline {
-		// Go never pings the /@latest endpoint _first_. It always tries /list and if that
-		// endpoint returns an empty list then it fallsback to calling /@latest.
-		return nil, errors.E(op, "Athens is in offline mode, use /list endpoint", errors.KindNotFound)
+		//Go pkgsite will call /@latest endpoint
+		//when Athens is in offline mode, we return the latest version from the cached versions as the /@latest version in offline mode."
+		lr, err := p.storage.List(ctx, mod)
+		if err != nil {
+			return nil, errors.E(op, err)
+		}
+		var latest *storage.RevInfo
+		for _, v := range lr {
+			var rev storage.RevInfo
+			info, err := p.storage.Info(ctx, mod, v)
+			if err != nil {
+				continue
+			}
+			err = json.Unmarshal(info, &rev)
+			if err != nil {
+				continue
+			}
+			if latest == nil || rev.Time.After(latest.Time) {
+				latest = &rev
+			}
+		}
+		if latest == nil {
+			return nil, errors.E(op, errors.KindNotFound, errors.M(mod))
+		}
+		return &storage.RevInfo{
+			Version: latest.Version,
+			Time:    latest.Time,
+		}, nil
 	}
 	lr, _, err := p.lister.List(ctx, mod)
 	if err != nil {
