@@ -21,6 +21,7 @@ const defaultConfigFile = "athens.toml"
 // Config provides configuration values for all components.
 type Config struct {
 	TimeoutConf
+
 	GoEnv            string    `envconfig:"GO_ENV"                    validate:"required"`
 	GoBinary         string    `envconfig:"GO_BINARY_PATH"            validate:"required"`
 	GoBinaryEnvVars  EnvList   `envconfig:"ATHENS_GO_BINARY_ENV_VARS"`
@@ -60,6 +61,7 @@ type Config struct {
 	RobotsFile       string    `envconfig:"ATHENS_ROBOTS_FILE"`
 	IndexType        string    `envconfig:"ATHENS_INDEX_TYPE"`
 	ShutdownTimeout  int       `envconfig:"ATHENS_SHUTDOWN_TIMEOUT"   validate:"min=0"`
+	StashTimeout     int       `envconfig:"ATHENS_STASH_TIMEOUT"`
 	SingleFlight     *SingleFlight
 	Storage          *Storage
 	Index            *Index
@@ -104,8 +106,8 @@ func (el *EnvList) Decode(value string) error {
 		return nil
 	}
 	*el = EnvList{} // env vars must override config file
-	assignments := strings.Split(value, ";")
-	for _, assignment := range assignments {
+	assignments := strings.SplitSeq(value, ";")
+	for assignment := range assignments {
 		*el = append(*el, strings.TrimSpace(assignment))
 	}
 	return el.Validate()
@@ -171,6 +173,7 @@ func defaultConfig() *Config {
 		RobotsFile:       "robots.txt",
 		IndexType:        "none",
 		ShutdownTimeout:  60,
+		StashTimeout:     600,
 		SingleFlight: &SingleFlight{
 			Etcd:  &Etcd{"localhost:2379,localhost:22379,localhost:32379"},
 			Redis: &Redis{"127.0.0.1:6379", "", DefaultRedisLockConfig()},
@@ -228,14 +231,16 @@ func (c *Config) FilterOff() bool {
 
 // ParseConfigFile parses the given file into an athens config struct.
 func ParseConfigFile(configFile string) (*Config, error) {
-	var config Config
+	// Always start from a default config.
+	config := defaultConfig()
+
 	// attempt to read the given config file
-	if _, err := toml.DecodeFile(configFile, &config); err != nil {
+	if _, err := toml.DecodeFile(configFile, config); err != nil {
 		return nil, err
 	}
 
 	// override values with environment variables if specified
-	if err := envOverride(&config); err != nil {
+	if err := envOverride(config); err != nil {
 		return nil, err
 	}
 
@@ -247,10 +252,10 @@ func ParseConfigFile(configFile string) (*Config, error) {
 	}
 
 	// validate all required fields have been populated
-	if err := validateConfig(config); err != nil {
+	if err := validateConfig(*config); err != nil {
 		return nil, err
 	}
-	return &config, nil
+	return config, nil
 }
 
 // envOverride uses Environment variables to override unspecified properties.

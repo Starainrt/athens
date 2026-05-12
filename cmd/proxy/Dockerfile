@@ -5,13 +5,12 @@
 # You can override the Go version used to build the image.
 # See project Makefile if using make.
 # See docker --build-arg if building directly.
-ARG GOLANG_VERSION=1.23.5
-ARG ALPINE_VERSION=3.20
+ARG GOLANG_VERSION=1.26.2
 
 FROM golang:${GOLANG_VERSION}-alpine AS builder
 
-ARG VERSION="unset" \
-    TARGETARCH
+ARG VERSION="unset"
+ARG TARGETARCH
 
 ENV GOARCH=${TARGETARCH} \
     GO111MODULE=on \
@@ -27,7 +26,7 @@ RUN DATE="$(date -u +%Y-%m-%d-%H:%M:%S-%Z)" && \
     -ldflags "-X github.com/gomods/athens/pkg/build.version=$VERSION -X github.com/gomods/athens/pkg/build.buildDate=$DATE -s -w" \
     -o /bin/athens-proxy ./cmd/proxy
 
-FROM alpine:${ALPINE_VERSION}
+FROM alpine:3.23
 ARG TARGETARCH
 
 ENV GOROOT="/usr/local/go" \
@@ -42,11 +41,11 @@ COPY --from=builder /usr/local/go/go.env /usr/local/go/go.env
 RUN chmod 644 /config/config.toml
 
 # Add tini, see https://github.com/gomods/athens/issues/1155 for details.
-RUN apk add --update git git-lfs mercurial openssh-client subversion procps fossil tini
+RUN apk add --update git git-lfs mercurial openssh-client subversion procps fossil tini tzdata
 
 # Add git-credential-github-app for native integration with GitHub Apps
 RUN if [ "${TARGETARCH}" = "arm64" ]; then ARCH="arm64"; else ARCH="x86_64"; fi \
-  && wget -O git-credential-github-app.tar.gz https://github.com/bdellegrazie/git-credential-github-app/releases/download/v0.3.0/git-credential-github-app_v0.3.0_Linux_${ARCH}.tar.gz \
+  && wget -O git-credential-github-app.tar.gz https://github.com/bdellegrazie/git-credential-github-app/releases/download/v0.3.4/git-credential-github-app_v0.3.4_Linux_${ARCH}.tar.gz \
   && tar xvzf 'git-credential-github-app.tar.gz' git-credential-github-app -C /usr/local/bin \
   && rm git-credential-github-app.tar.gz || true;
 

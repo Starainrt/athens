@@ -47,8 +47,8 @@ const homepage = `<!DOCTYPE html>
 	<pre>GOPROXY={{ .Host }},direct</pre>
 	{{ if .NoSumPatterns }}
 	<h3>Excluding checksum database</h3>
-	<p>Use the following GONOSUM environment variable to exclude checksum database:</p>
-	<pre>GONOSUM={{ .NoSumPatterns }}</pre>
+	<p>Use the following GONOSUMDB environment variable to exclude checksum database:</p>
+	<pre>GONOSUMDB={{ .NoSumPatterns }}</pre>
 	{{ end }}
 
 	<h2>How to use the Athens API</h2>
@@ -109,9 +109,14 @@ func proxyHomeHandler(c *config.Config) http.HandlerFunc {
 		// This should be correct in most cases. If it is not, users can supply their own template
 		templateData["Host"] = r.Host
 
+		// use host from URL, if it exists
+		if r.URL.Host != "" {
+			templateData["Host"] = r.URL.Host
+		}
+
 		// if the host does not have a scheme, add one based on the request
 		if !strings.HasPrefix(templateData["Host"], "http://") && !strings.HasPrefix(templateData["Host"], "https://") {
-			if r.TLS != nil {
+			if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 				templateData["Host"] = "https://" + templateData["Host"]
 			} else {
 				templateData["Host"] = "http://" + templateData["Host"]

@@ -112,7 +112,7 @@ func (l *listerMock) List(ctx context.Context, mod string) (*storage.RevInfo, []
 }
 
 func TestListMerge(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	bts := []byte("123")
 	clearStorage := func(st storage.Backend, module string, versions []string) {
 		for _, v := range versions {
@@ -127,7 +127,7 @@ func TestListMerge(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, v := range tc.strVersions {
-				s.Save(ctx, testModName, v, bts, io.NopCloser(bytes.NewReader(bts)), bts)
+				s.Save(ctx, testModName, v, bts, io.NopCloser(bytes.NewReader(bts)), nil, bts)
 			}
 			defer clearStorage(s, testModName, tc.strVersions)
 			dp := New(&Opts{s, nil, &listerMock{versions: tc.goVersions, err: tc.goErr}, nil, Strict})

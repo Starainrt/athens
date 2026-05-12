@@ -76,6 +76,7 @@ func NewServer(strg storage.Backend) http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		err = r.ParseMultipartForm(zip.MaxZipFile + zip.MaxGoMod)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -109,7 +110,7 @@ func NewServer(strg storage.Backend) http.Handler {
 			return
 		}
 		defer func() { _ = modZ.Close() }()
-		err = strg.Save(r.Context(), params.Module, params.Version, modFile, modZ, info)
+		err = strg.Save(r.Context(), params.Module, params.Version, modFile, modZ, nil, info)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

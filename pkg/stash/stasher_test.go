@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gomods/athens/pkg/index/nop"
 	"github.com/gomods/athens/pkg/storage"
@@ -54,8 +55,8 @@ func TestStash(t *testing.T) {
 			var mf mockFetcher
 			mf.ver = testCase.modVer
 
-			s := New(&mf, &ms, nop.New())
-			newVersion, err := s.Stash(context.Background(), "module", testCase.ver)
+			s := New(&mf, &ms, nop.New(), 10*time.Minute)
+			newVersion, err := s.Stash(t.Context(), "module", testCase.ver)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -84,7 +85,7 @@ type mockStorage struct {
 	existsResponse bool
 }
 
-func (ms *mockStorage) Save(ctx context.Context, module, version string, mod []byte, zip io.Reader, info []byte) error {
+func (ms *mockStorage) Save(ctx context.Context, module, version string, mod []byte, zip io.Reader, zipMD5 []byte, info []byte) error {
 	ms.saveCalled = true
 	ms.givenVersion = version
 	return nil

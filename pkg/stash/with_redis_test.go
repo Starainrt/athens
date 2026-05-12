@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"github.com/gomods/athens/pkg/config"
 	"github.com/gomods/athens/pkg/errors"
 	"github.com/gomods/athens/pkg/storage"
@@ -48,9 +48,9 @@ func TestWithRedisLock(t *testing.T) {
 	s := wrapper(ms)
 
 	var eg errgroup.Group
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		eg.Go(func() error {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second*10)
 			defer cancel()
 			_, err := s.Stash(ctx, "mod", "ver")
 			return err
@@ -84,9 +84,9 @@ func TestWithRedisLockWithPassword(t *testing.T) {
 	s := wrapper(ms)
 
 	var eg errgroup.Group
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		eg.Go(func() error {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second*10)
 			defer cancel()
 			_, err := s.Stash(ctx, "mod", "ver")
 			return err
@@ -147,13 +147,18 @@ func Test_getRedisClientOptions(t *testing.T) {
 		},
 		{
 			endpoint: "rediss://username:password@127.0.0.1:6379",
-			password: "1234", // Ignored because password was parsed
+			password: "1234", // Mismatched: URL has "password", config has "1234"
 			err:      errors.E("stash.WithRedisLock", errPasswordsDoNotMatch),
 		},
 		{
-			endpoint: "rediss://username:password@127.0.0.1:6379",
-			password: "1234", // Ignored because password was parsed
-			err:      errors.E("stash.WithRedisLock", errPasswordsDoNotMatch),
+			// TLS endpoint with no embedded password + separate password:
+			// should succeed and apply the password to options.
+			endpoint: "rediss://127.0.0.1:6379",
+			password: "1234",
+			options: &redis.Options{
+				Addr:     "127.0.0.1:6379",
+				Password: "1234",
+			},
 		},
 	}
 
@@ -210,6 +215,7 @@ func (ms *mockRedisStasher) Stash(ctx context.Context, mod, ver string) (string,
 			ver,
 			[]byte("mod file"),
 			strings.NewReader("zip file"),
+			nil,
 			[]byte("info file"),
 		)
 		if err != nil {

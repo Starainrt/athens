@@ -54,10 +54,11 @@ func main() {
 	stdlog.SetOutput(logrusErrorWriter)
 	stdlog.SetFlags(stdlog.Flags() &^ (stdlog.Ldate | stdlog.Ltime))
 
-	handler, err := actions.App(logger, conf)
+	handler, cleanup, err := actions.App(logger, conf)
 	if err != nil {
 		logger.WithError(err).Fatal("Could not create App")
 	}
+	defer cleanup()
 
 	srv := &http.Server{
 		Handler:           handler,
@@ -81,6 +82,7 @@ func main() {
 		logger := logger.WithField("unixSocket", conf.UnixSocket)
 		logger.Info("Starting application")
 
+		//nolint:noctx
 		ln, err = net.Listen("unix", conf.UnixSocket)
 		if err != nil {
 			logger.WithError(err).Fatal("Could not listen on Unix domain socket")
@@ -89,6 +91,7 @@ func main() {
 		logger := logger.WithField("tcpPort", conf.Port)
 		logger.Info("Starting application")
 
+		//nolint:noctx
 		ln, err = net.Listen("tcp", conf.Port)
 		if err != nil {
 			logger.WithError(err).Fatal("Could not listen on TCP port")

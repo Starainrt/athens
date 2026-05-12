@@ -46,7 +46,7 @@ func getDP(t *testing.T) Protocol {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st := stash.New(mf, s, nop.New())
+	st := stash.New(mf, s, nop.New(), 10*time.Minute)
 	return New(&Opts{
 		Storage:     s,
 		Stasher:     st,
@@ -76,7 +76,7 @@ var listTests = []listTest{
 
 func TestList(t *testing.T) {
 	dp := getDP(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tc := range listTests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -151,7 +151,7 @@ var listModeTests = []listModeTest{
 }
 
 func TestListMode(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, tc := range listModeTests {
 		strg, err := mem.NewStorage()
 		require.NoError(t, err)
@@ -165,7 +165,7 @@ func TestListMode(t *testing.T) {
 			networkMode: tc.networkmode,
 		}
 		for _, tag := range tc.storageTags {
-			err := strg.Save(ctx, tc.path, tag, []byte("mod"), bytes.NewReader([]byte("zip")), []byte("info"))
+			err := strg.Save(ctx, tc.path, tag, []byte("mod"), bytes.NewReader([]byte("zip")), nil, []byte("info"))
 			require.NoError(t, err)
 		}
 		t.Run(tc.name, func(t *testing.T) {
@@ -183,7 +183,7 @@ func TestListMode(t *testing.T) {
 
 func TestConcurrentLists(t *testing.T) {
 	dp := getDP(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	pkg := "github.com/athens-artifacts/samplelib"
 	var pkgErr error
@@ -240,7 +240,7 @@ var latestTests = []latestTest{
 
 func TestLatest(t *testing.T) {
 	dp := getDP(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tc := range latestTests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -286,7 +286,7 @@ var infoTests = []infoTest{
 
 func TestInfo(t *testing.T) {
 	dp := getDP(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tc := range infoTests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -338,7 +338,7 @@ func rmNewLine(input string) string {
 
 func TestGoMod(t *testing.T) {
 	dp := getDP(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for _, tc := range modTests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -382,12 +382,12 @@ func TestDownloadProtocol(t *testing.T) {
 		t.Fatal(err)
 	}
 	mp := &mockFetcher{}
-	st := stash.New(mp, s, nop.New())
+	st := stash.New(mp, s, nop.New(), 10*time.Minute)
 	dp := New(&Opts{s, st, nil, nil, Strict})
-	ctx := context.Background()
+	ctx := t.Context()
 
 	var eg errgroup.Group
-	for i := 0; i < len(mods); i++ {
+	for i := range mods {
 		m := mods[i]
 		eg.Go(func() error {
 			_, err := dp.GoMod(ctx, m.mod, m.ver)
@@ -429,15 +429,14 @@ func TestDownloadProtocolWhenFetchFails(t *testing.T) {
 	}
 	fakeMod := testMod{"github.com/athens-artifacts/samplelib", "v1.0.0"}
 	bts := []byte(fakeMod.mod + "@" + fakeMod.ver)
-	err = s.Save(context.Background(), fakeMod.mod, fakeMod.ver, bts, io.NopCloser(bytes.NewReader(bts)), bts)
+	err = s.Save(t.Context(), fakeMod.mod, fakeMod.ver, bts, io.NopCloser(bytes.NewReader(bts)), nil, bts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	mp := &notFoundFetcher{}
-	st := stash.New(mp, s, nop.New())
+	st := stash.New(mp, s, nop.New(), 10*time.Minute)
 	dp := New(&Opts{s, st, nil, nil, Strict})
-	ctx := context.Background()
-	_, err = dp.GoMod(ctx, fakeMod.mod, fakeMod.ver)
+	_, err = dp.GoMod(t.Context(), fakeMod.mod, fakeMod.ver)
 	if err != nil {
 		t.Errorf("Download protocol should succeed, instead it gave error %s \n", err)
 	}
@@ -456,12 +455,12 @@ func TestAsyncRedirect(t *testing.T) {
 		},
 	})
 	mod, ver := "github.com/athens-artifacts/happy-path", "v0.0.1"
-	_, err = dp.Info(context.Background(), mod, ver)
+	_, err = dp.Info(t.Context(), mod, ver)
 	if errors.Kind(err) != errors.KindNotFound {
 		t.Fatalf("expected async_redirect to enforce a 404 but got %v", errors.Kind(err))
 	}
 	<-ms.ch
-	info, err := dp.Info(context.Background(), mod, ver)
+	info, err := dp.Info(t.Context(), mod, ver)
 	require.NoError(t, err)
 	require.Equal(t, string(info), "info", "expected async fetch to be successful")
 }
@@ -472,7 +471,7 @@ type mockStasher struct {
 }
 
 func (ms *mockStasher) Stash(ctx context.Context, mod string, ver string) (string, error) {
-	err := ms.s.Save(ctx, mod, ver, []byte("mod"), strings.NewReader("zip"), []byte("info"))
+	err := ms.s.Save(ctx, mod, ver, []byte("mod"), strings.NewReader("zip"), nil, []byte("info"))
 	ms.ch <- true // signal async stashing is done
 	return ver, err
 }
@@ -514,7 +513,7 @@ func Test_copyContextWithCustomTimeout(t *testing.T) {
 	testEntry := &testEntry{}
 
 	// create a context with a logger entry
-	logctx := log.SetEntryInContext(context.Background(), testEntry)
+	logctx := log.SetEntryInContext(t.Context(), testEntry)
 
 	// check the log work as expected
 	log.EntryFromContext(logctx).Debugf("first test")

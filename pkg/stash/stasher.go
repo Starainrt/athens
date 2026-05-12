@@ -11,6 +11,7 @@ import (
 	"github.com/gomods/athens/pkg/observ"
 	"github.com/gomods/athens/pkg/storage"
 	"go.opencensus.io/trace"
+	"golang.org/x/sync/singleflight"
 )
 
 // Stasher has the job of taking a module
@@ -28,8 +29,8 @@ type Wrapper func(Stasher) Stasher
 // New returns a plain stasher that takes
 // a module from a download.Protocol and
 // stashes it into a backend.Storage.
-func New(f module.Fetcher, s storage.Backend, indexer index.Indexer, wrappers ...Wrapper) Stasher {
-	var st Stasher = &stasher{f, s, storage.WithChecker(s), indexer}
+func New(f module.Fetcher, s storage.Backend, indexer index.Indexer, timeout time.Duration, wrappers ...Wrapper) Stasher {
+	var st Stasher = &stasher{f, s, storage.WithChecker(s), indexer, &singleflight.Group{}, timeout}
 	for _, w := range wrappers {
 		st = w(st)
 	}
@@ -42,6 +43,8 @@ type stasher struct {
 	storage storage.Backend
 	checker storage.Checker
 	indexer index.Indexer
+	sfg     *singleflight.Group
+	timeout time.Duration
 }
 
 func (s *stasher) Stash(ctx context.Context, mod, ver string) (string, error) {
@@ -50,40 +53,59 @@ func (s *stasher) Stash(ctx context.Context, mod, ver string) (string, error) {
 	defer span.End()
 	log.EntryFromContext(ctx).Debugf("saving %s@%s to storage...", mod, ver)
 
-	// create a new context that ditches whatever deadline the caller passed
-	// but keep the tracing info so that we can properly trace the whole thing.
-	ctx, cancel := context.WithTimeout(trace.NewContext(context.Background(), span), time.Minute*10)
-	defer cancel()
-	v, err := s.fetchModule(ctx, mod, ver)
-	if err != nil {
-		return "", errors.E(op, err)
-	}
-	defer func() { _ = v.Zip.Close() }()
-	if v.Semver != ver {
-		exists, err := s.checker.Exists(ctx, mod, v.Semver)
+	semver_, err, _ := s.sfg.Do(mod+"###"+ver, func() (any, error) {
+		// create a new context that ditches whatever deadline the caller passed
+		// but keep the tracing info so that we can properly trace the whole thing.
+		ctx, cancel := context.WithTimeout(trace.NewContext(context.Background(), span), s.timeout)
+		defer cancel()
+		v, err := s.fetchModule(ctx, mod, ver)
 		if err != nil {
 			return "", errors.E(op, err)
 		}
-		if exists {
-			return v.Semver, nil
+		defer func() { _ = v.Zip.Close() }()
+		if v.Semver != ver {
+			exists, err := s.checker.Exists(ctx, mod, v.Semver)
+			if err != nil {
+				return "", errors.E(op, err)
+			}
+			if exists {
+				return v.Semver, nil
+			}
 		}
-	}
-	err = s.storage.Save(ctx, mod, v.Semver, v.Mod, v.Zip, v.Info)
+		err = s.storage.Save(ctx, mod, v.Semver, v.Mod, v.Zip, v.ZipMD5, v.Info)
+		if err != nil {
+			return "", errors.E(op, err)
+		}
+		err = s.indexer.Index(ctx, mod, v.Semver)
+		if err != nil && !errors.Is(err, errors.KindAlreadyExists) {
+			return "", errors.E(op, err)
+		}
+		return v.Semver, nil
+	})
 	if err != nil {
-		return "", errors.E(op, err)
+		return "", err
 	}
-	err = s.indexer.Index(ctx, mod, v.Semver)
-	if err != nil && !errors.Is(err, errors.KindAlreadyExists) {
-		return "", errors.E(op, err)
+
+	semver, ok := semver_.(string)
+	if !ok {
+		return "", errors.E(op, "unexpected type assertion failure for semver", errors.KindUnexpected)
 	}
-	return v.Semver, nil
+	return semver, nil
 }
 
 func (s *stasher) fetchModule(ctx context.Context, mod, ver string) (*storage.Version, error) {
 	const op errors.Op = "stasher.fetchModule"
+	start := time.Now()
 	v, err := s.fetcher.Fetch(ctx, mod, ver)
+	duration := time.Since(start)
+
 	if err != nil {
+		observ.RecordUpstreamFetch(ctx, "failure")
+		observ.RecordUpstreamFetchDuration(ctx, "failure", duration)
 		return nil, errors.E(op, err)
 	}
+
+	observ.RecordUpstreamFetch(ctx, "success")
+	observ.RecordUpstreamFetchDuration(ctx, "success", duration)
 	return v, nil
 }

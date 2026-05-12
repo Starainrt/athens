@@ -2,7 +2,6 @@ package compliance
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"testing"
@@ -28,18 +27,19 @@ func benchList(b *testing.B, s storage.Backend, reset func() error) {
 	module, version := "benchListModule", "1.0.1"
 	mock := getMockModule()
 	err := s.Save(
-		context.Background(),
+		b.Context(),
 		module,
 		version,
 		mock.Mod,
 		mock.Zip,
+		mock.ZipMD5,
 		mock.Info,
 	)
 	require.NoError(b, err, "save for storage failed")
 
 	b.Run("list", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			_, err := s.List(context.Background(), module)
+			_, err := s.List(b.Context(), module)
 			require.NoError(b, err, "Error in listing module")
 		}
 	})
@@ -56,7 +56,7 @@ func benchSave(b *testing.B, s storage.Backend, reset func() error) {
 	require.NoError(b, err)
 
 	mi := 0
-	ctx := context.Background()
+	ctx := b.Context()
 	b.Run("save", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			err := s.Save(
@@ -65,6 +65,7 @@ func benchSave(b *testing.B, s storage.Backend, reset func() error) {
 				version,
 				mock.Mod,
 				bytes.NewReader(zipBts),
+				mock.ZipMD5,
 				mock.Info,
 			)
 			require.NoError(b, err)
@@ -82,12 +83,12 @@ func benchDelete(b *testing.B, s storage.Backend, reset func() error) {
 	mock := getMockModule()
 	zipBts, err := io.ReadAll(mock.Zip)
 	require.NoError(b, err)
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.Run("delete", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			name := fmt.Sprintf("del-%s-%d", module, i)
-			err := s.Save(ctx, name, version, mock.Mod, bytes.NewReader(zipBts), mock.Info)
+			err := s.Save(ctx, name, version, mock.Mod, bytes.NewReader(zipBts), mock.ZipMD5, mock.Info)
 			require.NoError(b, err, "saving %s for storage failed", name)
 			err = s.Delete(ctx, name, version)
 			require.NoError(b, err, "delete failed: %s", name)
@@ -103,8 +104,8 @@ func benchExists(b *testing.B, s storage.Backend, reset func() error) {
 	module, version := "benchExistsModule", "1.0.1"
 	mock := getMockModule()
 
-	ctx := context.Background()
-	err := s.Save(ctx, module, version, mock.Mod, mock.Zip, mock.Info)
+	ctx := b.Context()
+	err := s.Save(ctx, module, version, mock.Mod, mock.Zip, mock.ZipMD5, mock.Info)
 	require.NoError(b, err)
 
 	b.Run("exists", func(b *testing.B) {

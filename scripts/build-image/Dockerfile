@@ -1,4 +1,5 @@
-FROM golang:1.23.5-bookworm
+ARG GOLANG_VERSION=1.26.2
+FROM golang:${GOLANG_VERSION}-bookworm
 
 WORKDIR /tmp
 

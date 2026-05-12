@@ -15,7 +15,7 @@ import (
 )
 
 func testConfigFile(t *testing.T) (testConfigFile string) {
-	testConfigFile = filepath.Join("..", "..", "config.dev.toml")
+	testConfigFile = filepath.Join("testdata", "config.dev.toml")
 	if err := os.Chmod(testConfigFile, 0o700); err != nil {
 		t.Fatalf("%s\n", err)
 	}
@@ -293,6 +293,7 @@ func TestParseExampleConfig(t *testing.T) {
 		RobotsFile:       "robots.txt",
 		IndexType:        "none",
 		ShutdownTimeout:  60,
+		StashTimeout:     600,
 		Index:            &Index{},
 	}
 
